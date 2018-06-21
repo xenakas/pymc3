@@ -1,6 +1,6 @@
 from .compound import CompoundStep
 from ..model import modelcontext
-#from ..theanof import inputvars
+from ..theanof import inputvars
 from ..blocking import ArrayOrdering, DictToArrayBijection
 import numpy as np
 from numpy.random import uniform
@@ -94,12 +94,25 @@ class BlockedStep(object):
         vars = np.atleast_1d(vars)
         have_grad = np.atleast_1d(have_grad)
         competences = []
-        for var,has_grad in zip(vars, have_grad):
+        for var, has_grad in zip(vars, have_grad):
             try:
                 competences.append(cls.competence(var, has_grad))
             except TypeError:
                 competences.append(cls.competence(var))
         return competences
+
+    @property
+    def vars_shape_dtype(self):
+        shape_dtypes = {}
+        for var in self.vars:
+            dtype = np.dtype(var.dtype)
+            shape = var.dshape
+            shape_dtypes[var.name] = (shape, dtype)
+        return shape_dtypes
+
+    def stop_tuning(self):
+        if hasattr(self, 'tune'):
+            self.tune = False
 
 
 class ArrayStep(BlockedStep):
@@ -218,30 +231,30 @@ class PopulationArrayStepShared(ArrayStepShared):
             raise ValueError('Population is just {} + {}. This is too small. You should ' \
                 'increase the number of chains.'.format(self.this_chain, self.other_chains))
         return
-#
-#
-# class GradientSharedStep(BlockedStep):
-#     def __init__(self, vars, model=None, blocked=True,
-#                  dtype=None, **theano_kwargs):
-#         model = modelcontext(model)
-#         self.vars = vars
-#         self.blocked = blocked
-#
-#         self._logp_dlogp_func = model.logp_dlogp_function(
-#             vars, dtype=dtype, **theano_kwargs)
-#
-#     def step(self, point):
-#         self._logp_dlogp_func.set_extra_values(point)
-#         array = self._logp_dlogp_func.dict_to_array(point)
-#
-#         if self.generates_stats:
-#             apoint, stats = self.astep(array)
-#             point = self._logp_dlogp_func.array_to_full_dict(apoint)
-#             return point, stats
-#         else:
-#             apoint = self.astep(array)
-#             point = self._logp_dlogp_func.array_to_full_dict(apoint)
-#             return point
+
+
+class GradientSharedStep(BlockedStep):
+    def __init__(self, vars, model=None, blocked=True,
+                 dtype=None, **theano_kwargs):
+        model = modelcontext(model)
+        self.vars = vars
+        self.blocked = blocked
+
+        self._logp_dlogp_func = model.logp_dlogp_function(
+            vars, dtype=dtype, **theano_kwargs)
+
+    def step(self, point):
+        self._logp_dlogp_func.set_extra_values(point)
+        array = self._logp_dlogp_func.dict_to_array(point)
+
+        if self.generates_stats:
+            apoint, stats = self.astep(array)
+            point = self._logp_dlogp_func.array_to_full_dict(apoint)
+            return point, stats
+        else:
+            apoint = self.astep(array)
+            point = self._logp_dlogp_func.array_to_full_dict(apoint)
+            return point
 
 
 def metrop_select(mr, q, q0):
